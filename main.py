@@ -34,7 +34,7 @@ def classify_number():
     try:
         number = int(number)
     except ValueError:
-        return flask.jsonify({"number": number, "error": True}), 400
+        return flask.jsonify({"error": "Invalid number format"}), 400
 
     # Classify properties
     properties = []
@@ -68,6 +68,6 @@ def classify_number():
     return flask.jsonify(response_data), 200
 
 if __name__ == '__main__':
-    import os
-    port = int(os.environ.get("PORT", 5000))
+    from os import environ
+    port = int(environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
