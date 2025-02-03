@@ -10,13 +10,12 @@
             text-align: center;
             margin: 20px;
         }
-        input {
+        input, button {
             padding: 10px;
             margin: 10px;
-            width: 200px;
+            width: 220px;
         }
         button {
-            padding: 10px;
             cursor: pointer;
         }
         pre {
@@ -24,8 +23,10 @@
             margin: auto;
             width: fit-content;
             background: #f4f4f4;
-            padding: 10px;
+            padding: 15px;
             border-radius: 5px;
+            white-space: pre-wrap;
+            word-wrap: break-word;
         }
     </style>
 </head>
@@ -35,26 +36,8 @@
     <input type="number" id="numberInput" placeholder="Enter a number">
     <button onclick="fetchNumberInfo()">Check</button>
 
-    <pre id="output"></pre>
+    <pre id="output">Results will be displayed here...</pre>
 
     <script>
         function fetchNumberInfo() {
             let number = document.getElementById("numberInput").value;
-            if (!number) {
-                alert("Please enter a number");
-                return;
-            }
-
-            fetch(`/api/classify-number?number=${number}`)
-                .then(response => response.json())
-                .then(data => {
-                    document.getElementById("output").innerText = data.output;
-                })
-                .catch(error => {
-                    document.getElementById("output").innerText = "Error fetching data.";
-                });
-        }
-    </script>
-
-</body>
-</html>

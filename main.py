@@ -1,14 +1,13 @@
 import flask
 import requests
-import os
 from flask_cors import CORS
 
 app = flask.Flask(__name__)
-CORS(app)
+CORS(app)  # Allow Cross-Origin Resource Sharing
 
-# Function to check if a number is Armstrong
+# Function to check if a number is an Armstrong number
 def is_armstrong(num):
-    digits = list(map(int, str(num)))
+    digits = [int(digit) for digit in str(num)]
     power = len(digits)
     return num == sum(digit ** power for digit in digits)
 
@@ -16,44 +15,59 @@ def is_armstrong(num):
 def sum_of_digits(num):
     return sum(int(digit) for digit in str(num))
 
-# Route to serve the frontend page
-@app.route('/')
-def home():
-    return flask.send_from_directory('.', 'index.html')
+# Function to check if a number is perfect
+def is_perfect(num):
+    divisors = [i for i in range(1, num) if num % i == 0]
+    return sum(divisors) == num
 
-# Route to classify the number
+# Function to check if a number is prime
+def is_prime(num):
+    if num < 2:
+        return False
+    return all(num % i != 0 for i in range(2, int(num ** 0.5) + 1))
+
 @app.route('/api/classify-number', methods=['GET'])
 def classify_number():
     number = flask.request.args.get('number')
 
+    # Validate input
     try:
         number = int(number)
     except ValueError:
-        return flask.jsonify({"number": number, "error": True}), 400  # ✅ Corrected Error Format
+        return flask.jsonify({"number": number, "error": True}), 400
 
-    is_prime = number > 1 and all(number % i != 0 for i in range(2, int(number**0.5) + 1))
-
+    # Classify properties
     properties = []
     if is_armstrong(number):
         properties.append("armstrong")
-    properties.append("odd" if number % 2 != 0 else "even")
-
-    digit_sum = sum_of_digits(number)
+    if number % 2 == 0:
+        properties.append("even")
+    else:
+        properties.append("odd")
+    if is_perfect(number):
+        properties.append("perfect")
 
     # Fetch fun fact from Numbers API
-    response = requests.get(f"http://numbersapi.com/{number}/math?json=true")
-    fun_fact = response.json().get('text', 'No fun fact available')
+    try:
+        response = requests.get(f"http://numbersapi.com/{number}/math?json=true")
+        response.raise_for_status()
+        fun_fact = response.json().get("text", "No fun fact available")
+    except requests.RequestException:
+        fun_fact = "Could not retrieve fun fact."
 
-    return flask.jsonify({
+    # Construct JSON response
+    response_data = {
         "number": number,
-        "is_prime": is_prime,
-        "is_perfect": False,  # ✅ Always present, even if false
+        "is_prime": is_prime(number),
+        "is_perfect": is_perfect(number),
         "properties": properties,
-        "digit_sum": digit_sum,
+        "digit_sum": sum_of_digits(number),
         "fun_fact": fun_fact
-    })
+    }
 
-# Run the application
+    return flask.jsonify(response_data), 200
+
 if __name__ == '__main__':
+    import os
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
