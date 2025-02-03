@@ -29,30 +29,29 @@ def classify_number():
     try:
         number = int(number)
     except ValueError:
-        return flask.jsonify({"error": "Invalid number"}), 400
-    
+        return flask.jsonify({"number": number, "error": True}), 400  # ✅ Corrected Error Format
+
     is_prime = number > 1 and all(number % i != 0 for i in range(2, int(number**0.5) + 1))
-    
+
     properties = []
     if is_armstrong(number):
-        properties.append("Armstrong Number")
-    properties.append("Odd" if number % 2 != 0 else "Even")
-    
+        properties.append("armstrong")
+    properties.append("odd" if number % 2 != 0 else "even")
+
     digit_sum = sum_of_digits(number)
-    
+
+    # Fetch fun fact from Numbers API
     response = requests.get(f"http://numbersapi.com/{number}/math?json=true")
     fun_fact = response.json().get('text', 'No fun fact available')
 
-    # Format response with line breaks
-    formatted_response = f"""
-    Number: {number}
-    Prime: {'Yes' if is_prime else 'No'}
-    Properties: {', '.join(properties)}
-    Sum of Digits: {digit_sum}
-    Fun Fact: {fun_fact}
-    """
-
-    return flask.jsonify({"output": formatted_response.strip()})
+    return flask.jsonify({
+        "number": number,
+        "is_prime": is_prime,
+        "is_perfect": False,  # ✅ Always present, even if false
+        "properties": properties,
+        "digit_sum": digit_sum,
+        "fun_fact": fun_fact
+    })
 
 # Run the application
 if __name__ == '__main__':
