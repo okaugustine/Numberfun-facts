@@ -1,9 +1,15 @@
 import flask
 import requests
 from flask_cors import CORS
+from flask import jsonify
 
 app = flask.Flask(__name__)
 CORS(app)  # Allow Cross-Origin Resource Sharing
+
+# Home route to check if the app is running correctly
+@app.route('/')
+def hello():
+    return "Hello, World!"
 
 # Function to check if a number is an Armstrong number
 def is_armstrong(num):
@@ -70,4 +76,4 @@ def classify_number():
 if __name__ == '__main__':
     from os import environ
     port = int(environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port)
+    app.run(host="0.0.0.0", port=port, debug=True)
