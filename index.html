@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Number Classification</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            text-align: center;
+            margin: 20px;
+        }
+        input {
+            padding: 10px;
+            margin: 10px;
+            width: 200px;
+        }
+        button {
+            padding: 10px;
+            cursor: pointer;
+        }
+        pre {
+            text-align: left;
+            margin: auto;
+            width: fit-content;
+            background: #f4f4f4;
+            padding: 10px;
+            border-radius: 5px;
+        }
+    </style>
+</head>
+<body>
+
+    <h2>Number Classification</h2>
+    <input type="number" id="numberInput" placeholder="Enter a number">
+    <button onclick="fetchNumberInfo()">Check</button>
+
+    <pre id="output"></pre>
+
+    <script>
+        function fetchNumberInfo() {
+            let number = document.getElementById("numberInput").value;
+            if (!number) {
+                alert("Please enter a number");
+                return;
+            }
+
+            fetch(`/api/classify-number?number=${number}`)
+                .then(response => response.json())
+                .then(data => {
+                    document.getElementById("output").innerText = data.output;
+                })
+                .catch(error => {
+                    document.getElementById("output").innerText = "Error fetching data.";
+                });
+        }
+    </script>
+
+</body>
+</html>
