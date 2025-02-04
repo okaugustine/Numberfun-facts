@@ -11,6 +11,11 @@ CORS(app)  # Allow Cross-Origin Resource Sharing
 def hello():
     return "Hello, World!"
 
+
+
+    app.run(debug=True)
+
+
 # Function to check if a number is an Armstrong number
 def is_armstrong(num):
     digits = [int(digit) for digit in str(num)]
@@ -36,11 +41,11 @@ def is_prime(num):
 def classify_number():
     number = flask.request.args.get('number')
 
-    # Validate input
+    # Validate input: Ensure that number is a valid integer
     try:
         number = int(number)
-    except ValueError:
-        return flask.jsonify({"error": "Invalid number format"}), 400
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid number format"}), 400
 
     # Classify properties
     properties = []
@@ -56,8 +61,8 @@ def classify_number():
     # Fetch fun fact from Numbers API
     try:
         response = requests.get(f"http://numbersapi.com/{number}/math?json=true")
-        response.raise_for_status()
-        fun_fact = response.json().get("text", "No fun fact available")
+        response.raise_for_status()  # Raise an exception for any non-2xx status code
+        fun_fact = response.json().get("text", f"No fun fact available for {number}")
     except requests.RequestException:
         fun_fact = "Could not retrieve fun fact."
 
@@ -71,9 +76,9 @@ def classify_number():
         "fun_fact": fun_fact
     }
 
-    return flask.jsonify(response_data), 200
+    return jsonify(response_data), 200
 
 if __name__ == '__main__':
     from os import environ
-    port = int(environ.get("PORT", 5000))
+    port = int(environ.get("PORT", 5001))
     app.run(host="0.0.0.0", port=port, debug=True)
