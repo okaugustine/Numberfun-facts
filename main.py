@@ -1,84 +1,89 @@
-import flask
-import requests
-from flask_cors import CORS
-from flask import jsonify
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+import httpx
 
-app = flask.Flask(__name__)
-CORS(app)  # Allow Cross-Origin Resource Sharing
+# Initialize FastAPI app
+app = FastAPI()
 
-# Home route to check if the app is running correctly
-@app.route('/')
-def hello():
-    return "Hello, World!"
+# Enable CORS (Cross-Origin Resource Sharing)
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],  # Allow all origins
+    allow_credentials=True,
+    allow_methods=["*"],  # Allow all HTTP methods
+    allow_headers=["*"],  # Allow all headers
+)
 
-
-
-    app.run(debug=True)
-
-
-# Function to check if a number is an Armstrong number
-def is_armstrong(num):
-    digits = [int(digit) for digit in str(num)]
-    power = len(digits)
-    return num == sum(digit ** power for digit in digits)
-
-# Function to calculate the sum of digits
-def sum_of_digits(num):
-    return sum(int(digit) for digit in str(num))
-
-# Function to check if a number is perfect
-def is_perfect(num):
-    divisors = [i for i in range(1, num) if num % i == 0]
-    return sum(divisors) == num
+# Numbers API URL
+NUMBERS_API_URL = "http://numbersapi.com/"
 
 # Function to check if a number is prime
-def is_prime(num):
-    if num < 2:
+def is_prime(n: int) -> bool:
+    if n < 2:
         return False
-    return all(num % i != 0 for i in range(2, int(num ** 0.5) + 1))
+    for i in range(2, int(n ** 0.5) + 1):
+        if n % i == 0:
+            return False
+    return True
 
-@app.route('/api/classify-number', methods=['GET'])
-def classify_number():
-    number = flask.request.args.get('number')
+# Function to calculate the sum of digits
+def sum_of_digits(n: int) -> int:
+    return sum(int(digit) for digit in str(abs(n)))
 
-    # Validate input: Ensure that number is a valid integer
-    try:
-        number = int(number)
-    except (ValueError, TypeError):
-        return jsonify({"error": "Invalid number format"}), 400
+# Function to check if a number is perfect
+def is_perfect(n: int) -> bool:
+    if n < 1:
+        return False
+    return sum(i for i in range(1, n) if n % i == 0) == n
 
-    # Classify properties
-    properties = []
-    if is_armstrong(number):
-        properties.append("armstrong")
-    if number % 2 == 0:
-        properties.append("even")
-    else:
-        properties.append("odd")
-    if is_perfect(number):
-        properties.append("perfect")
+# Function to determine parity (even or odd)
+def get_parity(n: int) -> str:
+    return "even" if n % 2 == 0 else "odd"
 
-    # Fetch fun fact from Numbers API
-    try:
-        response = requests.get(f"http://numbersapi.com/{number}/math?json=true")
-        response.raise_for_status()  # Raise an exception for any non-2xx status code
-        fun_fact = response.json().get("text", f"No fun fact available for {number}")
-    except requests.RequestException:
-        fun_fact = "Could not retrieve fun fact."
+# Function to check if a number is an Armstrong number
+def is_armstrong(n: int) -> bool:
+    digits = [int(d) for d in str(n)]
+    power = len(digits)
+    return sum(d ** power for d in digits) == n
 
-    # Construct JSON response
-    response_data = {
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to the Number Classification API! Use /api/classify-number?number=371"
+    }
+
+@app.get("/api/classify-number")
+async def get_number_fact(number: int = Query(..., description="Enter a valid integer")):
+    """Fetches a fact about a given number from Numbers API and additional properties."""
+    if number < 0:
+        raise HTTPException(status_code=400, detail="Number must be non-negative")
+
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{NUMBERS_API_URL}{number}")
+            response.raise_for_status()
+            fun_fact = response.text
+        except httpx.HTTPStatusError:
+            raise HTTPException(status_code=500, detail="Failed to fetch number fact")
+
+    return {
         "number": number,
         "is_prime": is_prime(number),
         "is_perfect": is_perfect(number),
-        "properties": properties,
+        "properties": [
+            get_parity(number),
+            "prime" if is_prime(number) else "composite",
+            "perfect" if is_perfect(number) else "imperfect",
+            "armstrong" if is_armstrong(number) else "not armstrong"
+        ],
         "digit_sum": sum_of_digits(number),
         "fun_fact": fun_fact
     }
 
-    return jsonify(response_data), 200
-
-if __name__ == '__main__':
-    from os import environ
-    port = int(environ.get("PORT", 5001))
-    app.run(host="0.0.0.0", port=port, debug=True)
+@app.exception_handler(ValueError)
+async def validation_exception_handler(request, exc):
+    """Handles invalid input errors."""
+    return {
+        "number": "alphabet",
+        "error": True
+    }, 400
