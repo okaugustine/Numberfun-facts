@@ -53,6 +53,10 @@ def is_armstrong(n: int) -> bool:
     power = len(digits)
     return sum(d ** power for d in digits) == abs(n)
 
+@app.get("/")
+def read_root():
+    return {"message": "Welcome to the Number Classifier API! Use '/api/classify-number' with a number query parameter."}
+
 @app.get("/api/classify-number")
 async def classify_number(number: str = Query(..., description="Enter a valid number")):
     try:
