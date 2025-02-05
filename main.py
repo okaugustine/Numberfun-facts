@@ -31,17 +31,16 @@ python3 -m venv venv
 "$APP_DIR/venv/bin/pip" install --upgrade pip
 "$APP_DIR/venv/bin/pip" install fastapi uvicorn gunicorn
 
-# Create FastAPI app
+# Create FastAPI app with fixed validation
 cat <<EOF > "$APP_DIR/main.py"
 from fastapi import FastAPI, Query
-import math
 
 app = FastAPI()
 
 def is_prime(n: int) -> bool:
     if n < 2:
         return False
-    for i in range(2, int(math.sqrt(n)) + 1):
+    for i in range(2, int(n ** 0.5) + 1):
         if n % i == 0:
             return False
     return True
@@ -55,17 +54,27 @@ def is_armstrong(n: int) -> bool:
     return sum(d ** power for d in digits) == abs(n)
 
 @app.get("/api/classify-number")
-async def classify_number(number: int = Query(..., description="Enter a valid integer")):
-    properties = ["even" if number % 2 == 0 else "odd"]
-    if is_armstrong(number):
+async def classify_number(number: str = Query(..., description="Enter a valid number")):
+    try:
+        num = int(number)
+    except ValueError:
+        return {
+            "number": number,  # Keep the invalid input in response
+            "error": True,
+            "message": "Invalid input, must be a valid integer"
+        }
+
+    properties = ["even" if num % 2 == 0 else "odd"]
+    if is_armstrong(num):
         properties.insert(0, "armstrong")
+
     return {
-        "number": number,
-        "is_prime": is_prime(number),
-        "is_perfect": is_perfect(number),
+        "number": num,
+        "is_prime": is_prime(num),
+        "is_perfect": is_perfect(num),
         "properties": properties,
-        "digit_sum": sum(map(int, str(abs(number)))),
-        "fun_fact": f"{number} is an Armstrong number!" if is_armstrong(number) else f"{number} is an interesting number!"
+        "digit_sum": sum(map(int, str(abs(num)))),
+        "fun_fact": f"{num} is an Armstrong number!" if is_armstrong(num) else f"{num} is an interesting number!"
     }
 
 if __name__ == "__main__":
