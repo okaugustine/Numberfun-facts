@@ -1,29 +1,42 @@
-from fastapi import FastAPI, Query, HTTPException
-from fastapi.middleware.cors import CORSMiddleware
-import httpx
-import os
+#!/bin/bash
+
+# Exit on error
+set -e
+
+# Variables
+APP_DIR="/home/ubuntu/number-classifier"
+SERVER_IP="18.175.45.20"  # Replace with your server's public IP
+SERVICE_NAME="number-classifier"
+
+# Function to run shell commands
+run_command() {
+    echo "Running: $1"
+    if ! eval "$1"; then
+        echo "Error: Command failed - $1" >&2
+        exit 1
+    fi
+}
+
+# Update system and install dependencies
+echo "Updating system packages..."
+run_command "sudo apt update && sudo apt upgrade -y"
+run_command "sudo apt install -y python3 python3-pip python3-venv nginx git"
+
+# Setup virtual environment
+echo "Setting up virtual environment..."
+sudo mkdir -p "$APP_DIR"
+sudo chown -R ubuntu:ubuntu "$APP_DIR"
+cd "$APP_DIR"
+python3 -m venv venv
+"$APP_DIR/venv/bin/pip" install --upgrade pip
+"$APP_DIR/venv/bin/pip" install fastapi uvicorn gunicorn
+
+# Create FastAPI app
+cat <<EOF > "$APP_DIR/main.py"
+from fastapi import FastAPI, Query
 import math
-import uvicorn
 
-# Initialize FastAPI app
 app = FastAPI()
-
-# Enable CORS
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
-# Numbers API Base URL
-NUMBERS_API_URL = "http://numbersapi.com/"
-
-def is_armstrong(n: int) -> bool:
-    digits = [int(d) for d in str(abs(n))]
-    power = len(digits)
-    return sum(d ** power for d in digits) == abs(n)
 
 def is_prime(n: int) -> bool:
     if n < 2:
@@ -34,48 +47,76 @@ def is_prime(n: int) -> bool:
     return True
 
 def is_perfect(n: int) -> bool:
-    if n < 1:
-        return False
-    return sum(i for i in range(1, n) if n % i == 0) == n
+    return n == sum(i for i in range(1, n) if n % i == 0)
 
-def digit_sum(n: int) -> int:
-    return sum(int(d) for d in str(abs(n)))
-
-def get_parity(n: int) -> str:
-    return "even" if n % 2 == 0 else "odd"
+def is_armstrong(n: int) -> bool:
+    digits = [int(d) for d in str(abs(n))]
+    power = len(digits)
+    return sum(d ** power for d in digits) == abs(n)
 
 @app.get("/api/classify-number")
-async def classify_number(number: str = Query(..., description="Enter a valid integer")):
-    # Validate input as integer
-    if not number.lstrip("-").isdigit():
-        raise HTTPException(status_code=400, detail="Invalid input: Must be an integer")
-    
-    number = int(number)
-    response_data = {
+async def classify_number(number: int = Query(..., description="Enter a valid integer")):
+    properties = ["even" if number % 2 == 0 else "odd"]
+    if is_armstrong(number):
+        properties.insert(0, "armstrong")
+    return {
         "number": number,
         "is_prime": is_prime(number),
         "is_perfect": is_perfect(number),
-        "properties": ["armstrong"] if is_armstrong(number) else [],
-        "digit_sum": digit_sum(number),
-        "fun_fact": ""
+        "properties": properties,
+        "digit_sum": sum(map(int, str(abs(number)))),
+        "fun_fact": f"{number} is an Armstrong number!" if is_armstrong(number) else f"{number} is an interesting number!"
     }
-    response_data["properties"].append(get_parity(number))
-    
-    # Fetch fun fact from Numbers API
-    async with httpx.AsyncClient() as client:
-        try:
-            response = await client.get(f"{NUMBERS_API_URL}{number}/math")
-            response.raise_for_status()
-            response_data["fun_fact"] = response.text.strip()
-        except httpx.HTTPStatusError:
-            response_data["fun_fact"] = "No math fact available."
-    
-    return response_data
-
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Number Classification API! Use /api/classify-number?number=371"}
 
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)
+EOF
+
+# Create Gunicorn systemd service
+cat <<EOF | sudo tee /etc/systemd/system/$SERVICE_NAME.service
+[Unit]
+Description=FastAPI Number Classifier
+After=network.target
+
+[Service]
+User=ubuntu
+Group=ubuntu
+WorkingDirectory=$APP_DIR
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:8000 main:app
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+# Reload systemd and start service
+run_command "sudo systemctl daemon-reload"
+run_command "sudo systemctl enable $SERVICE_NAME"
+run_command "sudo systemctl restart $SERVICE_NAME"
+
+# Configure NGINX
+cat <<EOF | sudo tee /etc/nginx/sites-available/$SERVICE_NAME
+server {
+    listen 80;
+    server_name $SERVER_IP;
+
+    location / {
+        proxy_pass http://127.0.0.1:8000;
+        proxy_set_header Host \$host;
+        proxy_set_header X-Real-IP \$remote_addr;
+        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
+    }
+}
+EOF
+
+# Enable NGINX config
+if [ ! -L /etc/nginx/sites-enabled/$SERVICE_NAME ]; then
+    sudo ln -s /etc/nginx/sites-available/$SERVICE_NAME /etc/nginx/sites-enabled/
+fi
+run_command "sudo systemctl restart nginx"
+
+# Final status check
+echo "Deployment complete!"
+echo "Your API is live at: http://$SERVER_IP/api/classify-number?number=371"
+run_command "sudo systemctl status $SERVICE_NAME --no-pager"
