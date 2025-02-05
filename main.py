@@ -6,6 +6,12 @@ import uvicorn  # Required for running the FastAPI app
 # Initialize FastAPI app
 app = FastAPI()
 
+@app.get("/")
+def read_root():
+    return {
+        "message": "Welcome to the Number Classification API! Use /api/classify-number?number=371"
+    }
+
 # Enable CORS (Cross-Origin Resource Sharing)
 app.add_middleware(
     CORSMiddleware,
@@ -47,12 +53,6 @@ def is_armstrong(n: int) -> bool:
     power = len(digits)
     return sum(d ** power for d in digits) == n
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Welcome to the Number Classification API! Use /api/classify-number?number=371"
-    }
-
 @app.get("/api/classify-number")
 async def get_number_fact(number: int = Query(..., description="Enter a valid integer")):
     """Fetches a fact about a given number from Numbers API and additional properties."""
@@ -91,5 +91,6 @@ async def validation_exception_handler(request, exc):
 
 # Run FastAPI using Uvicorn (Required for GCP)
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
     import uvicorn
-    uvicorn.run("app:app", host="0.0.0.0", port=8080)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
