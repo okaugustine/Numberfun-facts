@@ -1,41 +1,54 @@
-#!/bin/bash
+import os
+import subprocess
 
-# Exit on error
-set -e
+def run_command(command):
+    print(f"Running: {command}")
+    result = subprocess.run(command, shell=True, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"Error: {result.stderr}")
+        exit(1)
+    print(result.stdout)
 
-# Variables
-APP_DIR="/home/ubuntu/number-classifier"
-SERVER_IP="18.175.45.20"  # Replace with your server's public IP
-SERVICE_NAME="number-classifier"
-
-# Function to run shell commands
-run_command() {
-    echo "Running: $1"
-    if ! eval "$1"; then
-        echo "Error: Command failed - $1" >&2
-        exit 1
-    fi
-}
+APP_DIR = "/home/ubuntu/number-classifier"
+SERVICE_NAME = "number-classifier"
+SERVER_IP = "18.175.45.20"  # Replace with your server IP
 
 # Update system and install dependencies
-echo "Updating system packages..."
-run_command "sudo apt update && sudo apt upgrade -y"
-run_command "sudo apt install -y python3 python3-pip python3-venv nginx git"
+run_command("sudo apt update && sudo apt upgrade -y")
+run_command("sudo apt install -y python3 python3-pip python3-venv nginx git")
 
 # Setup virtual environment
-echo "Setting up virtual environment..."
-sudo mkdir -p "$APP_DIR"
-sudo chown -R ubuntu:ubuntu "$APP_DIR"
-cd "$APP_DIR"
-python3 -m venv venv
-"$APP_DIR/venv/bin/pip" install --upgrade pip
-"$APP_DIR/venv/bin/pip" install fastapi uvicorn gunicorn
+os.makedirs(APP_DIR, exist_ok=True)
+run_command(f"sudo chown -R $(whoami):$(whoami) {APP_DIR}")
+os.chdir(APP_DIR)
+run_command("python3 -m venv venv")
+run_command(f"{APP_DIR}/venv/bin/pip install --upgrade pip")
+run_command(f"{APP_DIR}/venv/bin/pip install fastapi uvicorn gunicorn httpx")
 
-# Create FastAPI app with improved validation
-cat <<EOF > "$APP_DIR/main.py"
-from fastapi import FastAPI, Query
+# Create FastAPI application
+fastapi_app = f"""
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+import httpx
+import os
 
 app = FastAPI()
+
+@app.get("/")
+def read_root():
+    return {{
+        "message": "Welcome to the Number Classification API! Use /api/classify-number?number=371"
+    }}
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+NUMBERS_API_URL = "http://numbersapi.com/"
 
 def is_prime(n: int) -> bool:
     if n < 2:
@@ -45,91 +58,108 @@ def is_prime(n: int) -> bool:
             return False
     return True
 
+def sum_of_digits(n: int) -> int:
+    return sum(int(digit) for d in str(abs(n)))
+
 def is_perfect(n: int) -> bool:
-    return n == sum(i for i in range(1, n) if n % i == 0)
+    if n < 1:
+        return False
+    return sum(i for i in range(1, n) if n % i == 0) == n
+
+def get_parity(n: int) -> str:
+    return "even" if n % 2 == 0 else "odd"
 
 def is_armstrong(n: int) -> bool:
     digits = [int(d) for d in str(abs(n))]
     power = len(digits)
     return sum(d ** power for d in digits) == abs(n)
 
-@app.get("/")
-def read_root():
-    return {"message": "Welcome to the Number Classifier API! Use '/api/classify-number' with a number query parameter."}
-
 @app.get("/api/classify-number")
-async def classify_number(number: str = Query(..., description="Enter a valid number")):
-    try:
-        num = int(number)
-    except ValueError:
-        return {
-            "number": number,  # Keep the invalid input in response
-            "error": True,
-            "message": "Invalid input, must be a valid integer"
-        }
+async def get_number_fact(number: float = Query(..., description="Enter a valid number")):
+    num_int = int(number) if number.is_integer() else None
 
-    properties = ["even" if num % 2 == 0 else "odd"]
-    if is_armstrong(num):
-        properties.insert(0, "armstrong")
+    async with httpx.AsyncClient() as client:
+        try:
+            response = await client.get(f"{NUMBERS_API_URL}{number}")
+            response.raise_for_status()
+            fun_fact = response.text
+        except httpx.HTTPStatusError:
+            fun_fact = "No fact available"
 
-    return {
-        "number": num,
-        "is_prime": is_prime(num),
-        "is_perfect": is_perfect(num),
-        "properties": properties,
-        "digit_sum": sum(map(int, str(abs(num)))),
-        "fun_fact": f"{num} is an Armstrong number!" if is_armstrong(num) else f"{num} is an interesting number!"
-    }
+    return {{
+        "number": number,
+        "is_prime": is_prime(num_int) if num_int is not None else None,
+        "is_perfect": is_perfect(num_int) if num_int is not None else None,
+        "properties": [
+            get_parity(num_int) if num_int is not None else "N/A",
+            "prime" if num_int is not None and is_prime(num_int) else "composite",
+            "perfect" if num_int is not None and is_perfect(num_int) else "imperfect",
+            "armstrong" if num_int is not None and is_armstrong(num_int) else "not armstrong"
+        ],
+        "digit_sum": sum_of_digits(num_int) if num_int is not None else "N/A",
+        "fun_fact": fun_fact
+    }}
 
 if __name__ == "__main__":
+    port = int(os.environ.get("PORT", 8080))
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8080)
-EOF
+    uvicorn.run(app, host="0.0.0.0", port=port)
+"""
+
+with open(f"{APP_DIR}/main.py", "w") as f:
+    f.write(fastapi_app)
 
 # Create Gunicorn systemd service
-cat <<EOF | sudo tee /etc/systemd/system/$SERVICE_NAME.service
+systemd_service = f"""
 [Unit]
 Description=FastAPI Number Classifier
 After=network.target
 
 [Service]
-User=ubuntu
-Group=ubuntu
-WorkingDirectory=$APP_DIR
-ExecStart=$APP_DIR/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:8080 main:app
-Restart=always
+User=$(whoami)
+Group=$(whoami)
+WorkingDirectory={APP_DIR}
+Environment="PATH={APP_DIR}/venv/bin"
+ExecStart={APP_DIR}/venv/bin/gunicorn --workers 4 --bind 127.0.0.1:8080 main:app
+Restart=on-failure
 
 [Install]
 WantedBy=multi-user.target
-EOF
+"""
+with open(f"/etc/systemd/system/{SERVICE_NAME}.service", "w") as f:
+    f.write(systemd_service)
 
 # Reload systemd and start service
-run_command "sudo systemctl daemon-reload"
-run_command "sudo systemctl enable $SERVICE_NAME"
-run_command "sudo systemctl restart $SERVICE_NAME"
+run_command("sudo systemctl daemon-reload")
+run_command(f"sudo systemctl enable {SERVICE_NAME}")
+run_command(f"sudo systemctl restart {SERVICE_NAME}")
 
 # Configure NGINX
-cat <<EOF | sudo tee /etc/nginx/sites-available/$SERVICE_NAME
-server {
+nginx_config = f"""
+server {{
     listen 80;
-    server_name $SERVER_IP;
+    server_name {SERVER_IP};
 
-    location / {
+    location / {{
         proxy_pass http://127.0.0.1:8080;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-    }
-}
-EOF
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection "upgrade";
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    }}
+}}
+"""
+with open(f"/etc/nginx/sites-available/{SERVICE_NAME}", "w") as f:
+    f.write(nginx_config)
 
 # Enable NGINX config
-if [ ! -L /etc/nginx/sites-enabled/$SERVICE_NAME ]; then
-    sudo ln -s /etc/nginx/sites-available/$SERVICE_NAME /etc/nginx/sites-enabled/
-fi
-run_command "sudo systemctl restart nginx"
+if not os.path.exists(f"/etc/nginx/sites-enabled/{SERVICE_NAME}"):
+    run_command(f"sudo ln -s /etc/nginx/sites-available/{SERVICE_NAME} /etc/nginx/sites-enabled/")
+run_command("sudo systemctl restart nginx")
 
 # Final status check
-echo "Deployment complete!"
-echo "Your API is live at: http://$SERVER_IP/api/classify-number?number=371"
-run_command "sudo systemctl status $SERVICE_NAME --no-pager"
+print("Deployment complete!")
+print(f"Your API is live at: http://{SERVER_IP}/api/classify-number?number=371")
+run_command(f"sudo systemctl status {SERVICE_NAME} --no-pager")
