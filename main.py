@@ -31,7 +31,7 @@ python3 -m venv venv
 "$APP_DIR/venv/bin/pip" install --upgrade pip
 "$APP_DIR/venv/bin/pip" install fastapi uvicorn gunicorn
 
-# Create FastAPI app with fixed validation
+# Create FastAPI app with improved validation
 cat <<EOF > "$APP_DIR/main.py"
 from fastapi import FastAPI, Query
 
@@ -79,7 +79,7 @@ async def classify_number(number: str = Query(..., description="Enter a valid nu
 
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=8000)
+    uvicorn.run(app, host="0.0.0.0", port=8080)
 EOF
 
 # Create Gunicorn systemd service
@@ -92,7 +92,7 @@ After=network.target
 User=ubuntu
 Group=ubuntu
 WorkingDirectory=$APP_DIR
-ExecStart=$APP_DIR/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:8000 main:app
+ExecStart=$APP_DIR/venv/bin/gunicorn --workers 4 --bind 0.0.0.0:8080 main:app
 Restart=always
 
 [Install]
@@ -111,7 +111,7 @@ server {
     server_name $SERVER_IP;
 
     location / {
-        proxy_pass http://127.0.0.1:8000;
+        proxy_pass http://127.0.0.1:8080;
         proxy_set_header Host \$host;
         proxy_set_header X-Real-IP \$remote_addr;
         proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
