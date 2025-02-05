@@ -1,6 +1,7 @@
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import httpx
+import uvicorn  # Required for running the FastAPI app
 
 # Initialize FastAPI app
 app = FastAPI()
@@ -87,3 +88,8 @@ async def validation_exception_handler(request, exc):
         "number": "alphabet",
         "error": True
     }, 400
+
+# Run FastAPI using Uvicorn (Required for GCP)
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("app:app", host="0.0.0.0", port=8080)
